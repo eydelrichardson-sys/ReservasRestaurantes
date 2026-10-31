@@ -1,0 +1,25 @@
+<span class="estrellas" title="@Valor.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) de 5">
+    @for (var i = 1; i <= 5; i++)
+    {
+        <i class="bi @Icono(i)"></i>
+    }
+    @if (Total.HasValue)
+    {
+        <span class="estrellas-total">@(Total.Value == 0 ? "Sin opiniones" : $"{Valor.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} ({Total.Value})")</span>
+    }
+</span>
+
+@code {
+    /// <summary>Promedio de 0 a 5 (se dibujan medias estrellas).</summary>
+    [Parameter] public double Valor { get; set; }
+
+    /// <summary>Cantidad de opiniones. Si se indica, se muestra el texto al lado.</summary>
+    [Parameter] public int? Total { get; set; }
+
+    private string Icono(int posicion)
+    {
+        if (Valor >= posicion - 0.25) return "bi-star-fill";
+        if (Valor >= posicion - 0.75) return "bi-star-half";
+        return "bi-star";
+    }
+}

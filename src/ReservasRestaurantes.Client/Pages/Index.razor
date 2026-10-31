@@ -1,0 +1,135 @@
+@page "/"
+@inject ApiClient Api
+
+<PageTitle>Reservas RD · Reserva tu mesa</PageTitle>
+
+<section class="hero mb-5">
+    <div class="row">
+        <div class="col-lg-8">
+            <span class="hero-kicker">Reservas en línea</span>
+            <h1 class="hero-title">Reserva tu mesa en segundos</h1>
+            <p class="hero-sub">
+                Mira la disponibilidad en tiempo real, elige tu horario y recibe la confirmación por correo.
+            </p>
+            <div class="hero-search">
+                <i class="bi bi-search"></i>
+                <input class="form-control form-control-lg" placeholder="Busca por nombre o zona…"
+                       @bind="filtro" @bind:event="oninput" aria-label="Buscar restaurante" />
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="d-flex justify-content-between align-items-end mb-3">
+    <h2 class="h3 mb-0">Restaurantes</h2>
+    @if (!cargando && error == null)
+    {
+        <span class="text-muted small">@Filtrados.Count() disponible(s)</span>
+    }
+</div>
+
+@if (cargando)
+{
+    <Spinner Texto="Cargando restaurantes…" />
+}
+else if (error != null)
+{
+    <div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>@error</div>
+}
+else if (!restaurantes.Any())
+{
+    <div class="empty-state rr-card">
+        <i class="bi bi-shop"></i>
+        Todavía no hay restaurantes registrados.
+    </div>
+}
+else if (!Filtrados.Any())
+{
+    <div class="empty-state rr-card">
+        <i class="bi bi-search"></i>
+        No encontramos restaurantes para "@filtro".
+    </div>
+}
+else
+{
+    <div class="row g-4">
+        @foreach (var r in Filtrados)
+        {
+            <div class="col-md-6 col-lg-4">
+                <a class="card rest-card shadow-sm" href="restaurante/@r.Id">
+                    <div class="rest-cover" style="@Fondo(r.Id)">
+                        @if (!string.IsNullOrWhiteSpace(r.ImagenUrl))
+                        {
+                            <img src="@r.ImagenUrl" alt="@r.Nombre" loading="lazy" />
+                        }
+                        else
+                        {
+                            @Inicial(r.Nombre)
+                        }
+                    </div>
+                    <div class="card-body">
+                        <h5 class="card-title mb-1">@r.Nombre</h5>
+                        <p class="text-muted small mb-1"><i class="bi bi-geo-alt-fill text-primary me-1"></i>@r.Direccion</p>
+                        <div class="mb-2 small"><Estrellas Valor="r.Promedio" Total="r.TotalResenas" /></div>
+                        <p class="card-text small line-clamp-3 mb-0">@r.Descripcion</p>
+                    </div>
+                    <div class="card-footer bg-white border-0 pt-0 pb-3">
+                        <span class="btn btn-primary w-100">Ver y reservar <i class="bi bi-arrow-right ms-1"></i></span>
+                    </div>
+                </a>
+            </div>
+        }
+    </div>
+}
+
+<section class="mt-5 pt-3">
+    <h2 class="h3 text-center mb-4">¿Cómo funciona?</h2>
+    <div class="row g-4 text-center">
+        <div class="col-md-4">
+            <div class="step-num"><i class="bi bi-shop"></i></div>
+            <h5>1. Elige el restaurante</h5>
+            <p class="text-muted small mb-0">Revisa su menú, horario y capacidad.</p>
+        </div>
+        <div class="col-md-4">
+            <div class="step-num"><i class="bi bi-calendar2-week"></i></div>
+            <h5>2. Escoge fecha y hora</h5>
+            <p class="text-muted small mb-0">Solo ves los horarios con mesa libre para tu grupo.</p>
+        </div>
+        <div class="col-md-4">
+            <div class="step-num"><i class="bi bi-envelope-check"></i></div>
+            <h5>3. Recibe tu confirmación</h5>
+            <p class="text-muted small mb-0">Te enviamos un correo cuando el restaurante apruebe tu reserva.</p>
+        </div>
+    </div>
+</section>
+
+@code {
+    private List<RestauranteResumenDto> restaurantes = new();
+    private string filtro = "";
+    private bool cargando = true;
+    private string? error;
+
+    private IEnumerable<RestauranteResumenDto> Filtrados =>
+        restaurantes.Where(r =>
+            string.IsNullOrWhiteSpace(filtro) ||
+            r.Nombre.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            r.Direccion.Contains(filtro.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var res = await Api.GetAsync<List<RestauranteResumenDto>>("api/restaurantes");
+        if (res.Ok) restaurantes = res.Data ?? new();
+        else error = res.Error;
+        cargando = false;
+    }
+
+    /// <summary>Degradado estable por restaurante (se usa cuando no tiene imagen).</summary>
+    private static string Fondo(int id)
+    {
+        var h = (id * 67) % 360;
+        return $"background:linear-gradient(135deg, hsl({h} 55% 36%), hsl({(h + 35) % 360} 60% 52%));";
+    }
+
+    private static string Inicial(string nombre) =>
+        string.IsNullOrWhiteSpace(nombre) ? "?" : nombre.Trim()[0].ToString().ToUpperInvariant();
+}

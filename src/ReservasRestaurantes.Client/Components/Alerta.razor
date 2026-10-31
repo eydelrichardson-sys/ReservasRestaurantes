@@ -1,0 +1,20 @@
+@if (!string.IsNullOrEmpty(Mensaje))
+{
+    <div class="alert alert-@(EsError ? "danger" : "success") alert-dismissible d-flex align-items-center" role="alert">
+        <i class="bi @(EsError ? "bi-exclamation-triangle-fill" : "bi-check-circle-fill") me-2"></i>
+        <div>@Mensaje</div>
+        <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Cerrar"></button>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Mensaje { get; set; }
+    [Parameter] public EventCallback<string?> MensajeChanged { get; set; }
+    [Parameter] public bool EsError { get; set; }
+
+    private async Task Cerrar()
+    {
+        Mensaje = null;
+        await MensajeChanged.InvokeAsync(null);
+    }
+}

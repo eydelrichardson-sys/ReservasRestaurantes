@@ -1,0 +1,16 @@
+<div class="estrellas estrellas-input" role="radiogroup" aria-label="Calificación">
+    @for (var i = 1; i <= 5; i++)
+    {
+        var n = i;
+        <button type="button" class="btn-star" aria-label="@n estrella(s)" @onclick="() => Elegir(n)">
+            <i class="bi @(n <= Valor ? "bi-star-fill" : "bi-star")"></i>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public int Valor { get; set; }
+    [Parameter] public EventCallback<int> ValorChanged { get; set; }
+
+    private Task Elegir(int n) => ValorChanged.InvokeAsync(n);
+}

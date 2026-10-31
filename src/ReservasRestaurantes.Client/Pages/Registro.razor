@@ -1,0 +1,100 @@
+@page "/registro"
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Registrar restaurante · Reservas RD</PageTitle>
+
+<div class="login-card" style="max-width:560px">
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+            <div class="login-icon"><i class="bi bi-shop-window"></i></div>
+            <h1 class="h3 text-center mb-1">Registra tu restaurante</h1>
+            <p class="text-muted text-center small mb-4">
+                Crea tu cuenta de administrador. Después podrás configurar horarios, mesas y menú.
+            </p>
+
+            <EditForm Model="model" OnValidSubmit="Registrar">
+                <DataAnnotationsValidator />
+
+                <h6 class="text-muted text-uppercase small">Restaurante</h6>
+                <div class="mb-3">
+                    <label class="form-label">Nombre del restaurante</label>
+                    <InputText class="form-control" @bind-Value="model.NombreRestaurante" />
+                    <ValidationMessage For="() => model.NombreRestaurante" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Dirección</label>
+                    <InputText class="form-control" @bind-Value="model.Direccion" />
+                    <ValidationMessage For="() => model.Direccion" />
+                </div>
+                <div class="mb-4">
+                    <label class="form-label">Teléfono <span class="text-muted">(opcional)</span></label>
+                    <InputText class="form-control" @bind-Value="model.Telefono" />
+                    <ValidationMessage For="() => model.Telefono" />
+                </div>
+
+                <h6 class="text-muted text-uppercase small">Administrador</h6>
+                <div class="mb-3">
+                    <label class="form-label">Tu nombre</label>
+                    <InputText class="form-control" @bind-Value="model.NombreAdmin" />
+                    <ValidationMessage For="() => model.NombreAdmin" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Correo</label>
+                    <InputText class="form-control" type="email" @bind-Value="model.Email" autocomplete="username" />
+                    <ValidationMessage For="() => model.Email" />
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Contraseña</label>
+                        <InputText class="form-control" type="password" @bind-Value="model.Password" autocomplete="new-password" />
+                        <ValidationMessage For="() => model.Password" />
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label">Confirmar contraseña</label>
+                        <InputText class="form-control" type="password" @bind-Value="model.ConfirmarPassword" autocomplete="new-password" />
+                        <ValidationMessage For="() => model.ConfirmarPassword" />
+                    </div>
+                </div>
+                <p class="small text-muted">Mínimo 8 caracteres, con mayúscula, minúscula y número.</p>
+
+                @if (error != null)
+                {
+                    <div class="alert alert-danger py-2 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>@error
+                    </div>
+                }
+
+                <button class="btn btn-primary w-100 py-2" type="submit" disabled="@cargando">
+                    @if (cargando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span>Creando cuenta…</span>
+                    }
+                    else
+                    {
+                        <span>Crear mi restaurante</span>
+                    }
+                </button>
+            </EditForm>
+
+            <p class="text-center small mt-3 mb-0">¿Ya tienes cuenta? <a href="login">Inicia sesión</a></p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly RegistroRestauranteRequest model = new();
+    private string? error;
+    private bool cargando;
+
+    private async Task Registrar()
+    {
+        cargando = true;
+        error = await Auth.RegistrarAsync(model);
+        cargando = false;
+
+        if (error == null)
+            Nav.NavigateTo("admin/perfil");
+    }
+}

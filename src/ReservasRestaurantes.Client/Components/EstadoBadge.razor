@@ -1,0 +1,13 @@
+<span class="badge rounded-pill estado-@Estado.ToString().ToLowerInvariant()">@Texto</span>
+
+@code {
+    [Parameter, EditorRequired] public EstadoReserva Estado { get; set; }
+
+    private string Texto => Estado switch
+    {
+        EstadoReserva.Pendiente => "Pendiente",
+        EstadoReserva.Aprobada => "Aprobada",
+        EstadoReserva.Rechazada => "Rechazada",
+        _ => "Cancelada"
+    };
+}

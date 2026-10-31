@@ -1,0 +1,144 @@
+@page "/admin/perfil"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+
+<PageTitle>Perfil y horarios</PageTitle>
+
+<PageHeader Icon="bi-gear" Title="Perfil y horarios"
+            Subtitle="Así te ven los clientes: información de contacto, duración de cada reserva y horario semanal." />
+
+<Alerta @bind-Mensaje="mensaje" EsError="mensajeEsError" />
+
+@if (cargando)
+{
+    <Spinner />
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5>Información del restaurante</h5>
+                    <EditForm Model="perfil" OnValidSubmit="GuardarPerfil">
+                        <DataAnnotationsValidator />
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Nombre</label>
+                            <InputText class="form-control" @bind-Value="perfil.Nombre" />
+                            <ValidationMessage For="() => perfil.Nombre" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Descripción</label>
+                            <InputTextArea class="form-control" rows="3" @bind-Value="perfil.Descripcion" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Dirección</label>
+                            <InputText class="form-control" @bind-Value="perfil.Direccion" />
+                            <ValidationMessage For="() => perfil.Direccion" />
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Teléfono</label>
+                                <InputText class="form-control" @bind-Value="perfil.Telefono" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-0">Correo de contacto</label>
+                                <InputText class="form-control" type="email" @bind-Value="perfil.Email" />
+                                <ValidationMessage For="() => perfil.Email" />
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">URL de la imagen</label>
+                            <InputText class="form-control" @bind-Value="perfil.ImagenUrl" placeholder="https://…" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small mb-0">Duración de cada reserva (minutos)</label>
+                            <InputNumber class="form-control" @bind-Value="perfil.DuracionReservaMin" />
+                            <ValidationMessage For="() => perfil.DuracionReservaMin" />
+                        </div>
+                        <button class="btn btn-primary" type="submit" disabled="@guardandoPerfil">Guardar información</button>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5>Horario semanal</h5>
+                    <p class="small text-muted">Los clientes verán turnos cada 30 minutos. El último turno termina a la hora de cierre.</p>
+                    <table class="table table-sm align-middle">
+                        <thead><tr><th>Día</th><th>Cerrado</th><th>Apertura</th><th>Cierre</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in horarios)
+                            {
+                                <tr>
+                                    <td>@h.NombreDia</td>
+                                    <td><input type="checkbox" class="form-check-input" @bind="h.Cerrado" /></td>
+                                    <td><input type="time" class="form-control form-control-sm" @bind="h.Apertura" @bind:format="HH:mm" disabled="@h.Cerrado" /></td>
+                                    <td><input type="time" class="form-control form-control-sm" @bind="h.Cierre" @bind:format="HH:mm" disabled="@h.Cerrado" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <button class="btn btn-primary" @onclick="GuardarHorarios" disabled="@guardandoHorarios">Guardar horario</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private RestauranteEditDto perfil = new();
+    private List<HorarioDto> horarios = new();
+    private bool cargando = true, guardandoPerfil, guardandoHorarios;
+    private string? mensaje;
+    private bool mensajeEsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var res = await Api.GetAsync<RestauranteDetalleDto>("api/admin/restaurante");
+        if (res.Ok && res.Data != null)
+        {
+            var d = res.Data;
+            perfil = new RestauranteEditDto
+            {
+                Nombre = d.Nombre, Descripcion = d.Descripcion, Direccion = d.Direccion,
+                Telefono = d.Telefono, Email = d.Email, ImagenUrl = d.ImagenUrl,
+                DuracionReservaMin = d.DuracionReservaMin
+            };
+
+            // Aseguramos los 7 días aunque falte alguno en la base de datos (Lunes primero).
+            horarios = Enumerable.Range(0, 7)
+                .Select(i => (i + 1) % 7)
+                .Select(dia => d.Horarios.FirstOrDefault(h => h.DiaSemana == dia)
+                               ?? new HorarioDto { DiaSemana = dia, Cerrado = true })
+                .ToList();
+        }
+        else Mostrar(res.Error ?? "No se pudo cargar el restaurante.", true);
+
+        cargando = false;
+    }
+
+    private async Task GuardarPerfil()
+    {
+        guardandoPerfil = true;
+        var res = await Api.PutAsync("api/admin/restaurante", perfil);
+        guardandoPerfil = false;
+        Mostrar(res.Ok ? "Información guardada." : res.Error ?? "No se pudo guardar.", !res.Ok);
+    }
+
+    private async Task GuardarHorarios()
+    {
+        guardandoHorarios = true;
+        var res = await Api.PutAsync("api/admin/restaurante/horarios", horarios);
+        guardandoHorarios = false;
+        Mostrar(res.Ok ? "Horario guardado." : res.Error ?? "No se pudo guardar.", !res.Ok);
+    }
+
+    private void Mostrar(string texto, bool esError)
+    {
+        mensaje = texto;
+        mensajeEsError = esError;
+    }
+}

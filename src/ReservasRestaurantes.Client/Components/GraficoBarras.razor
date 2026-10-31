@@ -1,0 +1,43 @@
+<div class="chart-box">
+    @if (!string.IsNullOrEmpty(Titulo))
+    {
+        <h6 class="chart-title">@Titulo</h6>
+    }
+
+    @if (Datos.Count == 0 || Maximo == 0)
+    {
+        <div class="text-muted small py-4 text-center">Sin datos en este período.</div>
+    }
+    else
+    {
+        <div class="barchart">
+            @for (var i = 0; i < Datos.Count; i++)
+            {
+                var p = Datos[i];
+                var alto = Math.Max(2, p.Valor * 100.0 / Maximo);
+                <div class="bar-col" title="@p.Etiqueta: @p.Valor">
+                    <div class="bar-value">@(p.Valor > 0 ? p.Valor.ToString() : "")</div>
+                    <div class="bar-track">
+                        <div class="bar" style="height:@alto.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+                    </div>
+                    <div class="bar-label">@(MostrarEtiqueta(i) ? p.Etiqueta : "")</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Titulo { get; set; }
+    [Parameter] public List<PuntoDto> Datos { get; set; } = new();
+
+    private int Maximo => Datos.Count == 0 ? 0 : Datos.Max(d => d.Valor);
+
+    /// <summary>Con muchos puntos (p. ej. 30 días) se muestran solo algunas etiquetas para que no se amontonen.</summary>
+    private bool MostrarEtiqueta(int i)
+    {
+        if (Datos.Count <= 14) return true;
+        var paso = (int)Math.Ceiling(Datos.Count / 10.0);
+        return i % paso == 0;
+    }
+}

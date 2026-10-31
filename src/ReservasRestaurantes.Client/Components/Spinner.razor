@@ -1,0 +1,11 @@
+<div class="text-center py-5">
+    <div class="spinner-border text-primary" role="status"></div>
+    @if (!string.IsNullOrEmpty(Texto))
+    {
+        <div class="text-muted small mt-2">@Texto</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Texto { get; set; }
+}

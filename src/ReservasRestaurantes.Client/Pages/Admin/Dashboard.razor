@@ -1,0 +1,381 @@
+@page "/admin"
+@attribute [Authorize(Roles = "Admin")]
+@implements IAsyncDisposable
+@inject ApiClient Api
+@inject AuthService Auth
+@inject HttpClient Http
+
+<PageTitle>Dashboard · Reservas RD</PageTitle>
+
+<PageHeader Icon="bi-speedometer2" Title="Dashboard de reservas"
+            Subtitle="Aprueba o rechaza solicitudes y mira la ocupación de tus mesas.">
+    <span class="live @(tiempoReal ? "live-on" : "live-off")">
+        <i class="bi bi-circle-fill"></i>
+        @(tiempoReal ? "En vivo" : "Actualiza cada 30 s")
+    </span>
+</PageHeader>
+
+<Alerta @bind-Mensaje="mensaje" EsError="mensajeEsError" />
+
+@* ---------- Indicadores ---------- *@
+@if (ocupacion == null)
+{
+    <Spinner Texto="Cargando indicadores…" />
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="kpi">
+                <div class="kpi-icon primary"><i class="bi bi-calendar-event"></i></div>
+                <div>
+                    <div class="kpi-value">@ocupacion.ReservasHoy</div>
+                    <div class="kpi-label">Reservas hoy</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="kpi">
+                <div class="kpi-icon warning"><i class="bi bi-hourglass-split"></i></div>
+                <div>
+                    <div class="kpi-value">@ocupacion.ReservasPendientes</div>
+                    <div class="kpi-label">Por responder hoy</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="kpi">
+                <div class="kpi-icon success"><i class="bi bi-grid-3x3-gap"></i></div>
+                <div>
+                    <div class="kpi-value">@(ocupacion.TotalMesas - ocupacion.MesasOcupadas)</div>
+                    <div class="kpi-label">Mesas libres ahora</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="kpi">
+                <div class="ring" style="--pct:@PctTexto"><div class="ring-inner">@PctTexto%</div></div>
+                <div>
+                    <div class="fw-semibold">Ocupación</div>
+                    <div class="kpi-label">@ocupacion.MesasOcupadas de @ocupacion.TotalMesas mesas</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rr-card p-3 p-md-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Mapa de mesas</h5>
+            <small class="text-muted">Actualizado @ocupacion.Ahora.ToString("HH:mm:ss")</small>
+        </div>
+        @if (!ocupacion.Mesas.Any())
+        {
+            <p class="text-muted mb-0">Aún no tienes mesas activas. Agrégalas en la sección Mesas.</p>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap">
+                @foreach (var m in ocupacion.Mesas)
+                {
+                    <div class="mesa-chip @(m.Ocupada ? "mesa-ocupada" : "mesa-libre")" title="@TituloMesa(m)">
+                        <strong>Mesa @m.Numero</strong>
+                        <span><i class="bi bi-people"></i> @m.Capacidad</span>
+                    </div>
+                }
+            </div>
+            <div class="small text-muted mt-2">
+                <span class="me-3"><span class="badge mesa-libre border">&nbsp;</span> Libre</span>
+                <span><span class="badge mesa-ocupada border">&nbsp;</span> Ocupada ahora (reserva aprobada en curso)</span>
+            </div>
+        }
+    </div>
+}
+
+@* ---------- Filtros ---------- *@
+<div class="rr-card p-3 mb-3">
+    <div class="row g-3 align-items-center">
+        <div class="col-lg-auto">
+            <div class="input-group">
+                <button class="btn btn-outline-secondary" @onclick="() => CambiarDia(-1)" title="Día anterior"><i class="bi bi-chevron-left"></i></button>
+                <input type="date" class="form-control" @bind="fecha" @bind:after="CargarReservas" aria-label="Fecha" />
+                <button class="btn btn-outline-secondary" @onclick="() => CambiarDia(1)" title="Día siguiente"><i class="bi bi-chevron-right"></i></button>
+            </div>
+        </div>
+        <div class="col-lg-auto">
+            <button class="btn btn-outline-primary" @onclick="Hoy">Hoy</button>
+        </div>
+        <div class="col-lg d-flex flex-wrap gap-2 justify-content-lg-end">
+            @foreach (var op in opcionesEstado)
+            {
+                <button class="chip @(filtroEstado == op.Valor ? "active" : "")" @onclick="() => SetEstado(op.Valor)">
+                    @op.Texto
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@* ---------- Lista de reservas ---------- *@
+@if (cargando)
+{
+    <Spinner />
+}
+else if (!reservas.Any())
+{
+    <div class="empty-state rr-card">
+        <i class="bi bi-calendar-x"></i>
+        No hay reservas para este filtro.
+    </div>
+}
+else
+{
+    <div class="rr-card">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Cliente</th>
+                        <th>Contacto</th>
+                        <th class="text-center">Pers.</th>
+                        <th class="text-center">Mesa</th>
+                        <th>Estado</th>
+                        <th>Notas</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in reservas)
+                    {
+                        <tr class="@(r.Estado == EstadoReserva.Pendiente ? "fila-pendiente" : "")">
+                            <td class="text-nowrap fw-bold">@r.Hora.ToString("HH:mm")</td>
+                            <td>
+                                @r.Nombre
+                                <div class="small text-muted">@r.Codigo</div>
+                            </td>
+                            <td class="small">
+                                <i class="bi bi-telephone me-1"></i>@r.Telefono<br />
+                                <i class="bi bi-envelope me-1"></i>@r.Email
+                            </td>
+                            <td class="text-center">@r.CantidadPersonas</td>
+                            <td class="text-center">@(r.NumeroMesa?.ToString() ?? "—")</td>
+                            <td><EstadoBadge Estado="r.Estado" /></td>
+                            <td class="small">@r.Notas</td>
+                            <td class="text-end text-nowrap">
+                                @if (r.Estado == EstadoReserva.Pendiente)
+                                {
+                                    @if (rechazandoId == r.Id)
+                                    {
+                                        <div class="input-group input-group-sm" style="min-width:290px">
+                                            <input class="form-control" placeholder="Motivo (opcional)" @bind="motivo" @bind:event="oninput" />
+                                            <button class="btn btn-danger" @onclick="() => Rechazar(r)" disabled="@procesando">Confirmar</button>
+                                            <button class="btn btn-outline-secondary" @onclick="CancelarRechazo" title="Cancelar"><i class="bi bi-x-lg"></i></button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-success btn-sm" @onclick="() => Aprobar(r)" disabled="@procesando">
+                                            <i class="bi bi-check-lg me-1"></i>Aprobar
+                                        </button>
+                                        <button class="btn btn-outline-danger btn-sm" @onclick="() => IniciarRechazo(r)" disabled="@procesando">
+                                            <i class="bi bi-x-lg me-1"></i>Rechazar
+                                        </button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly (string Valor, string Texto)[] opcionesEstado =
+    {
+        ("", "Todas"),
+        ("Pendiente", "Pendientes"),
+        ("Aprobada", "Aprobadas"),
+        ("Rechazada", "Rechazadas"),
+        ("Cancelada", "Canceladas")
+    };
+
+    private DateOnly fecha = DateOnly.FromDateTime(DateTime.Today);
+    private string filtroEstado = "";
+    private List<ReservaDto> reservas = new();
+    private OcupacionDto? ocupacion;
+
+    private bool cargando = true, procesando, tiempoReal;
+    private int? rechazandoId;
+    private string motivo = "";
+    private string? mensaje;
+    private bool mensajeEsError;
+
+    private HubConnection? hub;
+    private Timer? timer;
+
+    private string PctTexto =>
+        (ocupacion?.PorcentajeOcupacion ?? 0).ToString("0", CultureInfo.InvariantCulture);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarReservas(), CargarOcupacion());
+        await ConectarHubAsync();
+
+        // Refresco periódico: la ocupación cambia con el reloj aunque nadie reserve.
+        timer = new Timer(Tick, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private void Tick(object? state)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await CargarOcupacion();
+            StateHasChanged();
+        });
+    }
+
+    private static string TituloMesa(MesaEstadoDto m) =>
+        m.Ocupada ? $"{m.Cliente} hasta las {m.Hasta?.ToString("HH:mm")}" : "Libre";
+
+    // ---------- tiempo real (SignalR) ----------
+    private async Task ConectarHubAsync()
+    {
+        try
+        {
+            var idRest = ObtenerIdRestaurante();
+            if (idRest == null) return;
+
+            hub = new HubConnectionBuilder()
+                .WithUrl(new Uri(Http.BaseAddress!, "hubs/reservas"),
+                    o => o.AccessTokenProvider = () => Task.FromResult<string?>(Auth.Token))
+                .WithAutomaticReconnect()
+                .Build();
+
+            hub.On("ReservasActualizadas", async () =>
+            {
+                await InvokeAsync(async () =>
+                {
+                    await Task.WhenAll(RecargarReservas(), CargarOcupacion());
+                    StateHasChanged();
+                });
+            });
+
+            hub.Reconnected += async _ => await hub.InvokeAsync("Unirse", idRest.Value);
+
+            await hub.StartAsync();
+            await hub.InvokeAsync("Unirse", idRest.Value);
+            tiempoReal = true;
+        }
+        catch
+        {
+            tiempoReal = false; // sin SignalR sigue funcionando con el refresco de 30 s
+        }
+    }
+
+    private int? ObtenerIdRestaurante()
+    {
+        var token = Auth.Token;
+        if (string.IsNullOrEmpty(token)) return null;
+        try
+        {
+            var payload = token.Split('.')[1].Replace('-', '+').Replace('_', '/');
+            payload = (payload.Length % 4) switch { 2 => payload + "==", 3 => payload + "=", _ => payload };
+            using var doc = System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(payload));
+            return doc.RootElement.TryGetProperty("rid", out var rid) && int.TryParse(rid.GetString(), out var id) ? id : null;
+        }
+        catch { return null; }
+    }
+
+    // ---------- datos ----------
+    private async Task CargarReservas()
+    {
+        cargando = true;
+        await RecargarReservas();
+    }
+
+    /// <summary>Recarga la lista sin mostrar el spinner (avisos en tiempo real y tras aprobar/rechazar).</summary>
+    private async Task RecargarReservas()
+    {
+        var url = $"api/admin/reservas?fecha={fecha:yyyy-MM-dd}";
+        if (!string.IsNullOrEmpty(filtroEstado)) url += $"&estado={filtroEstado}";
+
+        var res = await Api.GetAsync<List<ReservaDto>>(url);
+        if (res.Ok) reservas = res.Data ?? new();
+        else Mostrar(res.Error ?? "No se pudieron cargar las reservas.", true);
+
+        cargando = false;
+    }
+
+    private async Task CargarOcupacion()
+    {
+        var res = await Api.GetAsync<OcupacionDto>("api/admin/reservas/ocupacion");
+        if (res.Ok) ocupacion = res.Data;
+    }
+
+    private async Task Hoy()
+    {
+        fecha = DateOnly.FromDateTime(DateTime.Today);
+        await CargarReservas();
+    }
+
+    private async Task CambiarDia(int dias)
+    {
+        fecha = fecha.AddDays(dias);
+        await CargarReservas();
+    }
+
+    private async Task SetEstado(string valor)
+    {
+        filtroEstado = valor;
+        await CargarReservas();
+    }
+
+    // ---------- acciones ----------
+    private async Task Aprobar(ReservaDto r)
+    {
+        procesando = true;
+        var res = await Api.PostAsync<ReservaDto>($"api/admin/reservas/{r.Id}/aprobar");
+        procesando = false;
+
+        if (res.Ok) Mostrar($"Reserva de {r.Nombre} aprobada. Se envió el correo de confirmación.", false);
+        else Mostrar(res.Error ?? "No se pudo aprobar.", true);
+
+        await Task.WhenAll(RecargarReservas(), CargarOcupacion());
+    }
+
+    private void IniciarRechazo(ReservaDto r)
+    {
+        rechazandoId = r.Id;
+        motivo = "";
+    }
+
+    private void CancelarRechazo() => rechazandoId = null;
+
+    private async Task Rechazar(ReservaDto r)
+    {
+        procesando = true;
+        var res = await Api.PostAsync<ReservaDto>($"api/admin/reservas/{r.Id}/rechazar",
+            new RechazarReservaRequest { Motivo = motivo });
+        procesando = false;
+        rechazandoId = null;
+
+        if (res.Ok) Mostrar($"Reserva de {r.Nombre} rechazada.", false);
+        else Mostrar(res.Error ?? "No se pudo rechazar.", true);
+
+        await Task.WhenAll(RecargarReservas(), CargarOcupacion());
+    }
+
+    private void Mostrar(string texto, bool esError)
+    {
+        mensaje = texto;
+        mensajeEsError = esError;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        timer?.Dispose();
+        if (hub != null) await hub.DisposeAsync();
+    }
+}

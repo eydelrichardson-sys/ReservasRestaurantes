@@ -1,0 +1,129 @@
+@page "/admin/reportes"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Reportes · Reservas RD</PageTitle>
+
+<PageHeader Icon="bi-bar-chart-line" Title="Reportes y estadísticas"
+            Subtitle="Analiza la demanda de tu restaurante y exporta los datos." />
+
+<div class="rr-card p-3 mb-4">
+    <div class="row g-2 align-items-end">
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1">Desde</label>
+            <input type="date" class="form-control" @bind="desde" />
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1">Hasta</label>
+            <input type="date" class="form-control" @bind="hasta" />
+        </div>
+        <div class="col-12 col-md-6 d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" @onclick="Cargar" disabled="@cargando"><i class="bi bi-arrow-repeat me-1"></i>Actualizar</button>
+            <button class="btn btn-outline-secondary" @onclick="() => Rapido(7)">7 días</button>
+            <button class="btn btn-outline-secondary" @onclick="() => Rapido(30)">30 días</button>
+            <button class="btn btn-outline-secondary" @onclick="() => Rapido(90)">90 días</button>
+        </div>
+    </div>
+</div>
+
+<Alerta @bind-Mensaje="error" EsError="true" />
+
+@if (cargando && r == null)
+{
+    <Spinner Texto="Calculando reporte…" />
+}
+else if (r != null)
+{
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-outline-success" @onclick='() => Exportar("excel", "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")' disabled="@exportando">
+            <i class="bi bi-file-earmark-excel me-1"></i>Exportar a Excel
+        </button>
+        <button class="btn btn-outline-danger" @onclick='() => Exportar("pdf", "pdf", "application/pdf")' disabled="@exportando">
+            <i class="bi bi-file-earmark-pdf me-1"></i>Exportar a PDF
+        </button>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3"><div class="kpi"><div class="kpi-valor">@r.TotalReservas</div><div class="kpi-label">Reservas en el período</div></div></div>
+        <div class="col-6 col-lg-3"><div class="kpi"><div class="kpi-valor">@r.PersonasAprobadas</div><div class="kpi-label">Personas atendidas (aprobadas)</div></div></div>
+        <div class="col-6 col-lg-3"><div class="kpi"><div class="kpi-valor">@r.TasaAprobacion.ToString("0.#", CultureInfo.InvariantCulture)%</div><div class="kpi-label">Tasa de aprobación</div></div></div>
+        <div class="col-6 col-lg-3">
+            <div class="kpi">
+                <div class="kpi-valor">@(r.TotalResenas == 0 ? "—" : r.PromedioCalificacion.ToString("0.0", CultureInfo.InvariantCulture))</div>
+                <div class="kpi-label">Calificación (@r.TotalResenas opiniones)</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rr-card p-3 mb-4">
+        <h6 class="mb-2">Estado de las reservas</h6>
+        @if (r.TotalReservas == 0)
+        {
+            <p class="text-muted small mb-0">No hay reservas en este período.</p>
+        }
+        else
+        {
+            <div class="stack-bar mb-2">
+                <div class="stack-aprobada" style="width:@Pct(r.Aprobadas)%" title="Aprobadas: @r.Aprobadas"></div>
+                <div class="stack-pendiente" style="width:@Pct(r.Pendientes)%" title="Pendientes: @r.Pendientes"></div>
+                <div class="stack-rechazada" style="width:@Pct(r.Rechazadas)%" title="Rechazadas: @r.Rechazadas"></div>
+                <div class="stack-cancelada" style="width:@Pct(r.Canceladas)%" title="Canceladas: @r.Canceladas"></div>
+            </div>
+            <div class="small d-flex flex-wrap gap-3">
+                <span><span class="badge stack-aprobada">&nbsp;</span> Aprobadas @r.Aprobadas</span>
+                <span><span class="badge stack-pendiente">&nbsp;</span> Pendientes @r.Pendientes</span>
+                <span><span class="badge stack-rechazada">&nbsp;</span> Rechazadas @r.Rechazadas</span>
+                <span><span class="badge stack-cancelada">&nbsp;</span> Canceladas @r.Canceladas</span>
+            </div>
+        }
+    </div>
+
+    <div class="row g-3">
+        <div class="col-12"><GraficoBarras Titulo="Reservas por día" Datos="r.PorDia" /></div>
+        <div class="col-lg-7"><GraficoBarras Titulo="Horas pico" Datos="r.PorHora" /></div>
+        <div class="col-lg-5"><GraficoBarras Titulo="Día de la semana" Datos="r.PorDiaSemana" /></div>
+    </div>
+}
+
+@code {
+    private DateOnly desde = DateOnly.FromDateTime(DateTime.Today.AddDays(-29));
+    private DateOnly hasta = DateOnly.FromDateTime(DateTime.Today);
+    private ReporteResumenDto? r;
+    private bool cargando, exportando;
+    private string? error;
+
+    protected override Task OnInitializedAsync() => Cargar();
+
+    private string Query => $"desde={desde:yyyy-MM-dd}&hasta={hasta:yyyy-MM-dd}";
+
+    private double Pct(int n) => r == null || r.TotalReservas == 0 ? 0 : Math.Round(n * 100.0 / r.TotalReservas, 1);
+
+    private async Task Rapido(int dias)
+    {
+        hasta = DateOnly.FromDateTime(DateTime.Today);
+        desde = hasta.AddDays(-(dias - 1));
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        cargando = true;
+        error = null;
+        var res = await Api.GetAsync<ReporteResumenDto>($"api/admin/reportes/resumen?{Query}");
+        if (res.Ok) r = res.Data; else error = res.Error;
+        cargando = false;
+    }
+
+    private async Task Exportar(string ruta, string extension, string mime)
+    {
+        exportando = true;
+        error = null;
+        var res = await Api.GetBytesAsync($"api/admin/reportes/{ruta}?{Query}");
+        if (res.Ok && res.Data != null)
+            await JS.InvokeVoidAsync("descargarArchivo", $"reservas_{desde:yyyyMMdd}_{hasta:yyyyMMdd}.{extension}", mime, Convert.ToBase64String(res.Data));
+        else
+            error = res.Error;
+        exportando = false;
+    }
+}

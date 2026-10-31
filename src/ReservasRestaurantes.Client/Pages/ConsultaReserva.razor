@@ -1,0 +1,186 @@
+@page "/reserva"
+@page "/reserva/{CodigoUrl}"
+@inject ApiClient Api
+
+<PageTitle>Mi reserva · Reservas RD</PageTitle>
+
+<PageHeader Icon="bi-ticket-perforated" Title="Consultar mi reserva"
+            Subtitle="Escribe el código que recibiste al reservar para ver su estado o cancelarla." />
+
+<div class="row">
+    <div class="col-md-8 col-lg-6">
+        <div class="input-group input-group-lg mb-3">
+            <input class="form-control text-uppercase" placeholder="Código de reserva" maxlength="12"
+                   @bind="codigo" @bind:event="oninput" @onkeydown="TeclaPresionada" aria-label="Código de reserva" />
+            <button class="btn btn-primary" @onclick="Buscar" disabled="@(buscando || string.IsNullOrWhiteSpace(codigo))">
+                @if (buscando)
+                {
+                    <span class="spinner-border spinner-border-sm"></span>
+                }
+                else
+                {
+                    <span><i class="bi bi-search me-1"></i>Buscar</span>
+                }
+            </button>
+        </div>
+
+        <Alerta @bind-Mensaje="error" EsError="true" />
+
+        @if (reserva != null)
+        {
+            <div class="card shadow-sm overflow-hidden">
+                <div class="status-band estado-@reserva.Estado.ToString().ToLowerInvariant()">
+                    <i class="bi @IconoEstado(reserva.Estado)"></i>
+                    <span>@MensajeEstado(reserva.Estado)</span>
+                </div>
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <h4 class="mb-0">@reserva.NombreRestaurante</h4>
+                        <EstadoBadge Estado="reserva.Estado" />
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <div class="text-muted small">Fecha</div>
+                            <div class="fw-semibold">@reserva.Fecha.ToString("dd/MM/yyyy")</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Hora</div>
+                            <div class="fw-semibold">@reserva.Hora.ToString("HH:mm")</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Personas</div>
+                            <div class="fw-semibold">@reserva.CantidadPersonas</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Mesa</div>
+                            <div class="fw-semibold">
+                                @(reserva.Estado == EstadoReserva.Aprobada && reserva.NumeroMesa != null ? reserva.NumeroMesa.ToString() : "Se asigna al aprobar")
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">A nombre de</div>
+                            <div class="fw-semibold">@reserva.Nombre</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">Código</div>
+                            <div class="fw-semibold">@reserva.Codigo</div>
+                        </div>
+                    </div>
+
+                    @if (reserva.Estado == EstadoReserva.Rechazada && !string.IsNullOrWhiteSpace(reserva.MotivoRechazo))
+                    {
+                        <div class="alert alert-warning mt-4 mb-0 small">
+                            <strong>Motivo:</strong> @reserva.MotivoRechazo
+                        </div>
+                    }
+
+                    @if (reserva.YaCalificada)
+                    {
+                        <div class="alert alert-success mt-4 mb-0 small">
+                            <i class="bi bi-heart-fill me-1"></i>¡Gracias por calificar tu visita!
+                        </div>
+                    }
+                    else if (reserva.PuedeCalificar)
+                    {
+                        <hr />
+                        <h6>¿Cómo fue tu experiencia?</h6>
+                        <EstrellasInput @bind-Valor="calificacion" />
+                        <textarea class="form-control mt-2" rows="2" maxlength="500"
+                                  placeholder="Cuéntanos más (opcional)" @bind="comentario"></textarea>
+                        <button class="btn btn-primary btn-sm mt-2" @onclick="Calificar" disabled="@(buscando || calificacion == 0)">
+                            <i class="bi bi-send me-1"></i>Enviar calificación
+                        </button>
+                    }
+
+                    @if (reserva.Estado is EstadoReserva.Pendiente or EstadoReserva.Aprobada && !reserva.PuedeCalificar && !reserva.YaCalificada)
+                    {
+                        <hr />
+                        <button class="btn btn-outline-danger btn-sm" @onclick="Cancelar" disabled="@buscando">
+                            <i class="bi bi-x-circle me-1"></i>Cancelar reserva
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? CodigoUrl { get; set; }
+
+    private string codigo = "";
+    private ReservaDto? reserva;
+    private string? error;
+    private bool buscando;
+    private int calificacion;
+    private string? comentario;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(CodigoUrl) && CodigoUrl != codigo)
+        {
+            codigo = CodigoUrl;
+            await Buscar();
+        }
+    }
+
+    private async Task TeclaPresionada(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Buscar();
+    }
+
+    private async Task Buscar()
+    {
+        if (string.IsNullOrWhiteSpace(codigo)) return;
+
+        buscando = true;
+        error = null;
+        reserva = null;
+
+        var res = await Api.GetAsync<ReservaDto>($"api/reservas/{Uri.EscapeDataString(codigo.Trim())}");
+        if (res.Ok) reserva = res.Data; else error = res.Error;
+        buscando = false;
+    }
+
+    private async Task Cancelar()
+    {
+        if (reserva == null) return;
+
+        buscando = true;
+        error = null;
+        var res = await Api.PostAsync<ReservaDto>($"api/reservas/{Uri.EscapeDataString(reserva.Codigo)}/cancelar");
+        if (res.Ok) reserva = res.Data; else error = res.Error;
+        buscando = false;
+    }
+
+    private async Task Calificar()
+    {
+        if (reserva == null || calificacion == 0) return;
+
+        buscando = true;
+        error = null;
+        var res = await Api.PostAsync<ReservaDto>(
+            $"api/reservas/{Uri.EscapeDataString(reserva.Codigo)}/resena",
+            new CrearResenaRequest { Calificacion = calificacion, Comentario = comentario });
+        if (res.Ok) { reserva = res.Data; calificacion = 0; comentario = null; }
+        else error = res.Error;
+        buscando = false;
+    }
+
+    private static string IconoEstado(EstadoReserva e) => e switch
+    {
+        EstadoReserva.Aprobada => "bi-check-circle-fill",
+        EstadoReserva.Pendiente => "bi-hourglass-split",
+        EstadoReserva.Rechazada => "bi-x-circle-fill",
+        _ => "bi-slash-circle-fill"
+    };
+
+    private static string MensajeEstado(EstadoReserva e) => e switch
+    {
+        EstadoReserva.Aprobada => "¡Reserva confirmada! Te esperamos.",
+        EstadoReserva.Pendiente => "Esperando la aprobación del restaurante.",
+        EstadoReserva.Rechazada => "El restaurante no pudo aceptar esta reserva.",
+        _ => "Esta reserva fue cancelada."
+    };
+}

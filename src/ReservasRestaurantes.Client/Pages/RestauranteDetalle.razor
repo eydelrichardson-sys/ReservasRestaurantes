@@ -1,0 +1,359 @@
+@page "/restaurante/{Id:int}"
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>@(rest?.Nombre ?? "Restaurante") · Reservas RD</PageTitle>
+
+@if (cargando)
+{
+    <Spinner Texto="Cargando restaurante…" />
+}
+else if (rest == null)
+{
+    <div class="alert alert-danger">@(error ?? "Restaurante no encontrado.")</div>
+    <a href="" class="back-link"><i class="bi bi-arrow-left"></i> Volver a los restaurantes</a>
+}
+else
+{
+    <a href="" class="back-link d-inline-block mb-3"><i class="bi bi-arrow-left"></i> Todos los restaurantes</a>
+
+    <div class="cover mb-4" style="@Fondo(rest.Id)">
+        @if (!string.IsNullOrWhiteSpace(rest.ImagenUrl))
+        {
+            <img src="@rest.ImagenUrl" alt="@rest.Nombre" />
+        }
+        <div class="cover-overlay">
+            <h1>@rest.Nombre</h1>
+            <div class="mb-1"><Estrellas Valor="rest.Promedio" Total="rest.TotalResenas" /></div>
+            <div><i class="bi bi-geo-alt-fill me-1"></i>@rest.Direccion</div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+
+            <div class="rr-card p-4 mb-4">
+                <h4 class="mb-3">Sobre el restaurante</h4>
+                @if (!string.IsNullOrWhiteSpace(rest.Descripcion))
+                {
+                    <p>@rest.Descripcion</p>
+                }
+                <div class="d-flex flex-wrap gap-2">
+                    <span class="info-chip"><i class="bi bi-people"></i> Hasta @rest.CapacidadTotal personas</span>
+                    <span class="info-chip"><i class="bi bi-grid-3x3-gap"></i> @rest.TotalMesas mesas</span>
+                    <span class="info-chip"><i class="bi bi-clock-history"></i> Reserva de @rest.DuracionReservaMin min</span>
+                    @if (!string.IsNullOrWhiteSpace(rest.Telefono))
+                    {
+                        <span class="info-chip"><i class="bi bi-telephone"></i> @rest.Telefono</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(rest.Email))
+                    {
+                        <span class="info-chip"><i class="bi bi-envelope"></i> @rest.Email</span>
+                    }
+                </div>
+            </div>
+
+            <div class="rr-card p-4 mb-4">
+                <h4 class="mb-3">Horario</h4>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        @foreach (var h in rest.Horarios)
+                        {
+                            var esHoy = h.DiaSemana == diaHoy;
+                            <tr class="@(esHoy ? "fw-semibold" : "")">
+                                <td style="width:40%">
+                                    @h.NombreDia
+                                    @if (esHoy) { <span class="badge bg-primary ms-1">Hoy</span> }
+                                </td>
+                                <td>
+                                    @if (h.Cerrado) { <span class="text-danger">Cerrado</span> }
+                                    else { @($"{h.Apertura:HH:mm} - {h.Cierre:HH:mm}") }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="rr-card p-4">
+                <h4 class="mb-1">Menú</h4>
+                @if (!rest.Menu.Any())
+                {
+                    <p class="text-muted mb-0">El restaurante aún no publicó su menú.</p>
+                }
+                @foreach (var grupo in rest.Menu.GroupBy(m => m.Categoria))
+                {
+                    <div class="menu-cat">@grupo.Key</div>
+                    @foreach (var m in grupo)
+                    {
+                        <div class="menu-row">
+                            <div>
+                                <strong>@m.Nombre</strong>
+                                @if (!string.IsNullOrWhiteSpace(m.Descripcion))
+                                {
+                                    <div class="small text-muted">@m.Descripcion</div>
+                                }
+                            </div>
+                            <div class="text-nowrap fw-semibold">RD$ @m.Precio.ToString("N2")</div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="rr-card p-4 mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h4 class="mb-0">Opiniones</h4>
+                    <Estrellas Valor="rest.Promedio" Total="rest.TotalResenas" />
+                </div>
+                @if (!resenas.Any())
+                {
+                    <p class="text-muted mb-0">Todavía no hay opiniones. ¡Sé el primero en reservar y calificar!</p>
+                }
+                @foreach (var o in resenas)
+                {
+                    <div class="resena">
+                        <div class="d-flex justify-content-between">
+                            <strong>@o.Nombre</strong>
+                            <span class="small text-muted">@o.Fecha.ToString("dd/MM/yyyy")</span>
+                        </div>
+                        <Estrellas Valor="o.Calificacion" />
+                        @if (!string.IsNullOrWhiteSpace(o.Comentario))
+                        {
+                            <p class="mb-0 mt-1 small">@o.Comentario</p>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card shadow-sm sticky-top" style="top:5rem">
+                <div class="card-body p-4">
+                    <h4 class="card-title mb-1">Reserva tu mesa</h4>
+                    <p class="text-muted small">Sin costo · Confirmación por correo</p>
+
+                    @if (confirmada != null)
+                    {
+                        <div class="text-center py-2">
+                            <div class="success-icon"><i class="bi bi-check-lg"></i></div>
+                            <h5 class="mt-3">¡Solicitud enviada!</h5>
+                            <p class="text-muted small">
+                                Tu reserva está <strong>pendiente</strong>. Cuando el restaurante la apruebe te escribiremos a
+                                <strong>@confirmada.Email</strong>.
+                            </p>
+                            <div class="code-box">@confirmada.Codigo</div>
+                            <div class="mb-3">
+                                <button class="btn btn-outline-primary btn-sm" @onclick="CopiarCodigo">
+                                    <i class="bi @(copiado ? "bi-check2" : "bi-clipboard") me-1"></i>@(copiado ? "Copiado" : "Copiar código")
+                                </button>
+                            </div>
+                            <div class="small text-muted mb-3">
+                                @confirmada.Fecha.ToString("dd/MM/yyyy") · @confirmada.Hora.ToString("HH:mm") · @confirmada.CantidadPersonas persona(s)
+                            </div>
+                            <a class="btn btn-primary btn-sm" href="reserva/@confirmada.Codigo">Ver mi reserva</a>
+                            <button class="btn btn-link btn-sm" @onclick="NuevaReserva">Hacer otra</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <EditForm Model="model" OnValidSubmit="Enviar">
+                            <DataAnnotationsValidator />
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-7">
+                                    <label class="form-label small mb-1"><i class="bi bi-calendar3 me-1"></i>Fecha</label>
+                                    <InputDate class="form-control" @bind-Value="model.Fecha" @bind-Value:after="CargarSlots"
+                                               min="@hoy.ToString("yyyy-MM-dd")" />
+                                </div>
+                                <div class="col-5">
+                                    <label class="form-label small mb-1"><i class="bi bi-people me-1"></i>Personas</label>
+                                    <InputNumber class="form-control" @bind-Value="model.CantidadPersonas" @bind-Value:after="CargarSlots" min="1" max="20" />
+                                    <ValidationMessage For="() => model.CantidadPersonas" />
+                                </div>
+                            </div>
+
+                            <label class="form-label small mb-1"><i class="bi bi-clock me-1"></i>Hora</label>
+                            @if (cargandoSlots)
+                            {
+                                <div class="mb-3"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+                            }
+                            else if (!slots.Any())
+                            {
+                                <div class="text-muted small mb-3">
+                                    No hay horarios para esa fecha (el restaurante está cerrado o la fecha ya pasó).
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="d-flex flex-wrap gap-2 mb-3">
+                                    @foreach (var s in slots)
+                                    {
+                                        var seleccionado = horaSel == s.Hora;
+                                        <button type="button"
+                                                class="btn btn-sm slot-btn @(seleccionado ? "btn-primary" : "btn-outline-primary")"
+                                                disabled="@(!s.Disponible)" @onclick="() => horaSel = s.Hora">
+                                            @s.Hora.ToString("HH:mm")
+                                        </button>
+                                    }
+                                </div>
+                                @if (!slots.Any(s => s.Disponible))
+                                {
+                                    <div class="alert alert-warning py-2 small">
+                                        No quedan mesas para ese día con esa cantidad de personas. Prueba otra fecha.
+                                    </div>
+                                }
+                            }
+
+                            @if (horaSel != null)
+                            {
+                                <div class="resumen-reserva">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    @model.Fecha.ToString("dd/MM/yyyy") a las @horaSel.Value.ToString("HH:mm") para @model.CantidadPersonas persona(s)
+                                </div>
+                            }
+
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Nombre</label>
+                                <InputText class="form-control" @bind-Value="model.Nombre" autocomplete="name" />
+                                <ValidationMessage For="() => model.Nombre" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Correo</label>
+                                <InputText class="form-control" type="email" @bind-Value="model.Email" autocomplete="email" />
+                                <ValidationMessage For="() => model.Email" />
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Teléfono</label>
+                                <InputText class="form-control" type="tel" @bind-Value="model.Telefono" autocomplete="tel" />
+                                <ValidationMessage For="() => model.Telefono" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small mb-1">Notas (opcional)</label>
+                                <InputTextArea class="form-control" rows="2" @bind-Value="model.Notas"
+                                               placeholder="Cumpleaños, alergias, silla para bebé…" />
+                            </div>
+
+                            @if (errorReserva != null)
+                            {
+                                <div class="alert alert-danger py-2 small">@errorReserva</div>
+                            }
+
+                            <button class="btn btn-primary w-100 py-2" type="submit" disabled="@enviando">
+                                @if (enviando)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Enviando…</span>
+                                }
+                                else
+                                {
+                                    <span>Solicitar reserva</span>
+                                }
+                            </button>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private RestauranteDetalleDto? rest;
+    private CrearReservaRequest model = new();
+    private List<SlotDto> slots = new();
+    private ReservaDto? confirmada;
+    private TimeOnly? horaSel;
+    private readonly DateOnly hoy = DateOnly.FromDateTime(DateTime.Today);
+    private readonly int diaHoy = (int)DateTime.Today.DayOfWeek;
+    private bool cargando = true, cargandoSlots, enviando, copiado;
+    private string? error, errorReserva;
+    private List<ResenaDto> resenas = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var res = await Api.GetAsync<RestauranteDetalleDto>($"api/restaurantes/{Id}");
+        if (res.Ok) rest = res.Data; else error = res.Error;
+        cargando = false;
+
+        if (rest != null)
+        {
+            model.IdRestaurante = Id;
+            var rr = await Api.GetAsync<List<ResenaDto>>($"api/restaurantes/{Id}/resenas");
+            if (rr.Ok) resenas = rr.Data ?? new();
+            await CargarSlots();
+        }
+    }
+
+    private async Task CargarSlots()
+    {
+        if (model.CantidadPersonas < 1 || model.CantidadPersonas > 20) return;
+
+        cargandoSlots = true;
+        var res = await Api.GetAsync<List<SlotDto>>(
+            $"api/restaurantes/{Id}/disponibilidad?fecha={model.Fecha:yyyy-MM-dd}&personas={model.CantidadPersonas}");
+        slots = res.Ok ? res.Data ?? new() : new();
+        cargandoSlots = false;
+
+        // Si la hora elegida ya no está disponible, se limpia.
+        if (horaSel != null && !slots.Any(s => s.Hora == horaSel && s.Disponible))
+            horaSel = null;
+    }
+
+    private async Task Enviar()
+    {
+        errorReserva = null;
+        if (horaSel == null)
+        {
+            errorReserva = "Selecciona una hora disponible.";
+            return;
+        }
+
+        model.IdRestaurante = Id;
+        model.Hora = horaSel.Value;
+        enviando = true;
+
+        var res = await Api.PostAsync<ReservaDto>("api/reservas", model);
+        enviando = false;
+
+        if (res.Ok)
+        {
+            confirmada = res.Data;
+            copiado = false;
+        }
+        else
+        {
+            errorReserva = res.Error;
+            await CargarSlots(); // refresca por si alguien tomó la mesa
+        }
+    }
+
+    private async Task NuevaReserva()
+    {
+        confirmada = null;
+        model = new CrearReservaRequest { IdRestaurante = Id };
+        horaSel = null;
+        await CargarSlots();
+    }
+
+    private async Task CopiarCodigo()
+    {
+        if (confirmada == null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", confirmada.Codigo);
+            copiado = true;
+        }
+        catch
+        {
+            // Sin permiso de portapapeles: el código sigue visible en pantalla.
+        }
+    }
+
+    private static string Fondo(int id)
+    {
+        var h = (id * 67) % 360;
+        return $"background:linear-gradient(135deg, hsl({h} 55% 36%), hsl({(h + 35) % 360} 60% 52%));";
+    }
+}
